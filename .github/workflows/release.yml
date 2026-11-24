@@ -1,0 +1,94 @@
+name: Build and Release APK
+
+on:
+  # Trigger on push to main (CI build, upload artifact)
+  push:
+    branches: [main]
+  # Trigger on version tags (create GitHub Release with APK)
+  tags:
+    - 'v*'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;34.0.0 platforms;android-34'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Get version name
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="0.0.0-$(echo ${GITHUB_SHA} | cut -c1-7)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp app/build/outputs/apk/debug/app-debug.apk output/Frigate-v${{ steps.version.outputs.version }}.apk
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frigate-APK
+          path: output/*.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Frigate v${{ steps.version.outputs.version }}
+          body: |
+            ## Frigate WebView App v${{ steps.version.outputs.version }}
+
+            ### 安装方法
+            1. 下载下面的 APK 文件
+            2. 在手机上打开安装（需开启"允许安装未知来源应用"）
+            3. 打开 App，输入 Frigate 服务器地址
+
+            ### 功能
+            - 自动连接服务器并自动登录
+            - HTTPS 自签名证书支持
+            - 登录页可切换服务器
+            - 网络错误弹窗提示
+          files: output/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
