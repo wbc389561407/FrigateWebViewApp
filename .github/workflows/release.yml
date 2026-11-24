@@ -1,13 +1,11 @@
 name: Build and Release APK
 
 on:
-  # Trigger on push to main (CI build, upload artifact)
   push:
-    branches: [main]
-  # Trigger on version tags (create GitHub Release with APK)
-  tags:
-    - 'v*'
-  # Allow manual trigger
+    branches:
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -48,18 +46,18 @@ jobs:
       - name: Get version name
         id: version
         run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="0.0.0-$(echo ${GITHUB_SHA} | cut -c1-7)"
+            VERSION="0.0.0-$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
       - name: Rename APK
         run: |
           mkdir -p output
-          cp app/build/outputs/apk/debug/app-debug.apk output/Frigate-v${{ steps.version.outputs.version }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "output/Frigate-v${{ steps.version.outputs.version }}.apk"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
