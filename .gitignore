@@ -1,0 +1,32 @@
+# Built application files
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Build files
+build/
+app/build/
+.gradle/
+
+# Local configuration
+local.properties
+
+# Gradle wrapper (keep the jar and properties, these are needed)
+# But don't ignore them
+
+# IDE files
+.idea/
+*.iml
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Original SVG (not needed in repo)
+logo.svg
