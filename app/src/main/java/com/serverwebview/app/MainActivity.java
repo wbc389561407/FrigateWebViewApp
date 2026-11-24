@@ -1,19 +1,13 @@
 package com.serverwebview.app;
 
-import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextPaint;
-import android.text.style.ClickableSpan;
 import android.text.style.UnderlineSpan;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -21,17 +15,10 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-
 /**
  * Main Activity: First screen where the user inputs a server address.
- * - Auto-skips to WebView if server URL is saved
- * - Shows version number, GitHub star link, and update notification
+ * - Auto-skips to WebView if server URL is saved (update check runs in WebViewActivity)
+ * - Shows input page with version number, GitHub star link, and update indicator
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -43,9 +30,6 @@ public class MainActivity extends AppCompatActivity {
     static final String KEY_SKIP_UPDATE = "skip_update";
     static final String KEY_LATEST_VERSION = "latest_version";
     static final String KEY_LATEST_VERSION_URL = "latest_version_url";
-
-    private static final String GITHUB_REPO = "https://github.com/wbc389561407/FrigateWebViewApp";
-    private static final String GITHUB_API_LATEST = "https://api.github.com/repos/wbc389561407/FrigateWebViewApp/releases/latest";
 
     private EditText urlInput;
     private Button connectButton;
@@ -68,7 +52,8 @@ public class MainActivity extends AppCompatActivity {
                 .getString(KEY_LAST_URL, null);
 
         if (savedUrl != null && !savedUrl.isEmpty()) {
-            // Auto-navigate to saved server URL, skip input page
+            // Auto-navigate to saved server URL, skip input page.
+            // Update check will be done by WebViewActivity (async, independent).
             Intent intent = new Intent(this, WebViewActivity.class);
             intent.putExtra(WebViewActivity.EXTRA_URL, savedUrl);
             startActivity(intent);
@@ -76,7 +61,8 @@ public class MainActivity extends AppCompatActivity {
         } else {
             // No saved URL, show input page
             setContentView(createMainLayout());
-            checkForUpdates();
+            // Check for updates on this activity (async, independent)
+            UpdateChecker.check(this, currentVersion, updateIndicator);
         }
     }
 
@@ -92,11 +78,6 @@ public class MainActivity extends AppCompatActivity {
         titleView.setTextSize(28f);
         titleView.setGravity(android.view.Gravity.CENTER);
         titleView.setPadding(0, 40, 0, 8);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        titleView.setLayoutParams(titleParams);
         layout.addView(titleView);
 
         // Version text
@@ -175,7 +156,7 @@ public class MainActivity extends AppCompatActivity {
         githubLink.setGravity(android.view.Gravity.CENTER);
         githubLink.setClickable(true);
         githubLink.setOnClickListener(v -> {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_REPO));
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/wbc389561407/FrigateWebViewApp"));
             startActivity(browserIntent);
         });
         bottomLayout.addView(githubLink);
@@ -183,143 +164,6 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(bottomLayout);
 
         return layout;
-    }
-
-    /**
-     * Check for updates via GitHub API in a background thread.
-     * If a newer version is found:
-     * - Show update indicator on the page (always)
-     * - Show dialog if user hasn't selected "don't remind again"
-     */
-    private void checkForUpdates() {
-        new Thread(() -> {
-            try {
-                URL url = new URL(GITHUB_API_LATEST);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                conn.connect();
-
-                if (conn.getResponseCode() != 200) return;
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder response = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    response.append(line);
-                }
-                reader.close();
-
-                JSONObject json = new JSONObject(response.toString());
-                String latestTag = json.getString("tag_name"); // e.g. "v1.0.0"
-                String releaseUrl = json.getString("html_url");
-
-                // Get download URL from assets
-                String downloadUrl = releaseUrl;
-                if (json.has("assets") && json.getJSONArray("assets").length() > 0) {
-                    downloadUrl = json.getJSONArray("assets").getJSONObject(0).getString("browser_download_url");
-                }
-
-                // Save latest version info
-                getSharedPreferences(PREF_NAME, MODE_PRIVATE)
-                        .edit()
-                        .putString(KEY_LATEST_VERSION, latestTag)
-                        .putString(KEY_LATEST_VERSION_URL, downloadUrl)
-                        .apply();
-
-                // Compare versions
-                if (isNewerVersion(latestTag, currentVersion)) {
-                    boolean skipUpdate = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
-                            .getBoolean(KEY_SKIP_UPDATE, false);
-
-                    final String finalLatestTag = latestTag;
-                    final String finalDownloadUrl = downloadUrl;
-                    runOnUiThread(() -> {
-                        // Always show update indicator on the page
-                        showUpdateIndicator(finalLatestTag, finalDownloadUrl);
-
-                        // Show dialog only if user hasn't opted out
-                        if (!skipUpdate) {
-                            showUpdateDialog(finalLatestTag, finalDownloadUrl);
-                        }
-                    });
-                }
-            } catch (Exception e) {
-                // Network error or parsing error — silently ignore
-            }
-        }).start();
-    }
-
-    /**
-     * Show the "new version available" indicator on the page.
-     * Clicking it opens the download page in the browser.
-     */
-    private void showUpdateIndicator(String latestVersion, String downloadUrl) {
-        updateIndicator.setText("有新版本 " + latestVersion + " 可用，点击下载");
-        updateIndicator.setVisibility(View.VISIBLE);
-        updateIndicator.setOnClickListener(v -> {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
-            startActivity(browserIntent);
-        });
-    }
-
-    /**
-     * Show update dialog with "don't remind again" checkbox.
-     */
-    private void showUpdateDialog(String latestVersion, String downloadUrl) {
-        CheckBox checkBox = new CheckBox(this);
-        checkBox.setText("不再提示");
-
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(50, 30, 50, 10);
-
-        TextView message = new TextView(this);
-        message.setText("发现新版本 " + latestVersion + "\n当前版本 " + currentVersion + "\n\n是否前往下载？");
-        message.setTextSize(15f);
-        container.addView(message);
-        container.addView(checkBox);
-
-        new AlertDialog.Builder(this)
-                .setTitle("发现新版本")
-                .setView(container)
-                .setPositiveButton("去下载", (DialogInterface dialog, int which) -> {
-                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
-                    startActivity(browserIntent);
-                })
-                .setNegativeButton("稍后", (DialogInterface dialog, int which) -> {
-                    if (checkBox.isChecked()) {
-                        getSharedPreferences(PREF_NAME, MODE_PRIVATE)
-                                .edit()
-                                .putBoolean(KEY_SKIP_UPDATE, true)
-                                .apply();
-                    }
-                })
-                .setCancelable(false)
-                .show();
-    }
-
-    /**
-     * Compare version strings like "v1.0.0" vs "v1.0.1".
-     * Returns true if latest > current.
-     */
-    private boolean isNewerVersion(String latest, String current) {
-        try {
-            String[] latestParts = latest.replace("v", "").split("\\.");
-            String[] currentParts = current.replace("v", "").split("\\.");
-            int len = Math.max(latestParts.length, currentParts.length);
-            for (int i = 0; i < len; i++) {
-                int l = i < latestParts.length ? Integer.parseInt(latestParts[i]) : 0;
-                int c = i < currentParts.length ? Integer.parseInt(currentParts[i]) : 0;
-                if (l > c) return true;
-                if (l < c) return false;
-            }
-        } catch (Exception e) {
-            return false;
-        }
-        return false;
     }
 
     private void connectToServer() {

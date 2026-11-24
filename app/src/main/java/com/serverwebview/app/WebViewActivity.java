@@ -92,6 +92,14 @@ public class WebViewActivity extends AppCompatActivity {
         currentUrl = url;
         webView.loadUrl(url);
         startLoadTimeout();
+
+        // Check for updates — async, independent of the login/webview flow
+        try {
+            String ver = "v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            UpdateChecker.check(this, ver, null);
+        } catch (Exception e) {
+            UpdateChecker.check(this, "v1.0", null);
+        }
     }
 
     private View createLayout() {
