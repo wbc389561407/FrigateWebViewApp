@@ -88,6 +88,12 @@ public class WebViewActivity extends AppCompatActivity {
             return;
         }
 
+        // Check if WebView component is available (missing on Android TV etc.)
+        if (!isWebViewAvailable()) {
+            showWebViewMissingDialog();
+            return;
+        }
+
         setupWebView();
         currentUrl = url;
         webView.loadUrl(url);
@@ -100,6 +106,67 @@ public class WebViewActivity extends AppCompatActivity {
         } catch (Exception e) {
             UpdateChecker.check(this, "v1.0", null);
         }
+    }
+
+    /**
+     * Check if a WebView provider is available on the device.
+     * Android TV devices often don't have WebView/Chrome pre-installed.
+     */
+    private boolean isWebViewAvailable() {
+        // Method 1: Use official API (Android 8+ / API 26+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                if (android.webkit.WebView.getCurrentWebViewPackage() != null) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // ignore, fall through
+            }
+        }
+
+        // Method 2: Try to actually create a WebView — if no provider exists, it throws
+        try {
+            new WebView(this);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Show dialog when WebView is not available.
+     * Guides user to install Android System WebView.
+     */
+    private void showWebViewMissingDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("缺少 WebView 组件")
+                .setMessage("本应用需要 Android System WebView 才能运行。\n\n" +
+                        "解决方法：\n" +
+                        "1. 在应用商店搜索「Android System WebView」安装\n" +
+                        "2. 或安装 Chrome 浏览器\n" +
+                        "3. 或用 adb 安装：\n" +
+                        "   adb install webview.apk\n\n" +
+                        "点击下方按钮可尝试打开应用商店搜索。")
+                .setPositiveButton("去应用商店", (DialogInterface dialog, int which) -> {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=Android System WebView"));
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        // Play Store not available, open browser instead
+                        try {
+                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=Android%20System%20WebView"));
+                            startActivity(intent);
+                        } catch (Exception e2) {
+                            Toast.makeText(this, "无法打开应用商店，请手动安装 WebView", Toast.LENGTH_LONG).show();
+                        }
+                    }
+                    finish();
+                })
+                .setNegativeButton("退出", (DialogInterface dialog, int which) -> {
+                    finish();
+                })
+                .setCancelable(false)
+                .show();
     }
 
     private View createLayout() {
